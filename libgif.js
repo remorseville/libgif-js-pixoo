@@ -62,6 +62,65 @@
 			http://humpy77.deviantart.com/journal/Frame-Delay-Times-for-Animated-GIFs-214150546
 
 */
+
+const cloneCanvas = function(oldCanvas, width, height) {
+
+	
+	var newCanvas2 = document.createElement('canvas');
+	newCanvas2.classList.add("frame");
+
+	var context2 = newCanvas2.getContext('2d');
+    var ctx2 = oldCanvas.getContext("2d");
+
+	//let width = oldCanvas.width;
+	//let height = oldCanvas.height;
+
+	var xywh = crop(width, height);
+    console.log(xywh)
+	//newCanvas.width = xywh[2];
+	//newCanvas.height = xywh[3];
+	newCanvas2.width = 64;
+	newCanvas2.height = 64;
+	
+
+	//var imageDataShow = ctx2.getImageData(xywh[0], xywh[1], xywh[2], xywh[3]);
+	//context.putImageData(imageDataShow, 0,0 );
+	var bitm = createImageBitmap(oldCanvas, xywh[0], xywh[1], xywh[2], xywh[3], {
+		resizeWidth: 64, // optional
+		resizeHeight: 64, // optional
+		resizeQuality: 'high' // Defaults to `'low'`. optional
+
+	}).then(function(bitm) {
+		// Draw each sprite onto the canvas
+		context2.drawImage(bitm, 0, 0)
+
+	});
+
+
+	return newCanvas2;
+};
+
+
+const crop = function(width, height) {
+	if (width > height) {
+		let x = (width - height) / 2;
+		let y = 0;
+		console.log(x, y, height, height)
+		return [x, y, height, height];
+	};
+
+	if (width < height) {
+		let y = (height - width) / 2;
+		let x = 0;
+		return [x, y, width, width];
+	};
+
+	if (width === height) {
+		return [0, 0, width, height];
+	};
+};
+
+
 (function (root, factory) {
     if (typeof define === 'function' && define.amd) {
         define([], factory);
@@ -129,12 +188,11 @@
     };
 
     var lzwDecode = function (minCodeSize, data) {
-        // TODO: Now that the GIF parser is a bit different, maybe this should get an array of bytes instead of a String?
         var pos = 0; // Maybe this streaming thing should be merged with the Stream?
         var readCode = function (size) {
             var code = 0;
             for (var i = 0; i < size; i++) {
-                if (data.charCodeAt(pos >> 3) & (1 << (pos & 7))) {
+                if (data[pos >> 3] & (1 << (pos & 7))) {
                     code |= 1 << i;
                 }
                 pos++;
@@ -142,28 +200,68 @@
             return code;
         };
 
-        var output = [];
 
         var clearCode = 1 << minCodeSize;
         var eoiCode = clearCode + 1;
 
         var codeSize = minCodeSize + 1;
 
-        var dict = [];
+        var outputBlockSize = 4096,
+            bufferBlockSize = 4096;
 
-        var clear = function () {
+        var output = new Uint8Array(outputBlockSize),
+            buffer = new Uint8Array(bufferBlockSize),
             dict = [];
-            codeSize = minCodeSize + 1;
-            for (var i = 0; i < clearCode; i++) {
-                dict[i] = [i];
-            }
-            dict[clearCode] = [];
-            dict[eoiCode] = null;
 
+        var bufferOffset = 0,
+            outputOffset = 0;
+
+
+        var fill = function () {
+            for (var i = 0; i < clearCode; i++) {
+                dict[i] = new Uint8Array(1);
+                dict[i][0] = i;
+            }
+            dict[clearCode] = new Uint8Array(0);
+            dict[eoiCode] = null;
+        }
+        var clear = function () {
+            var keep = clearCode + 2;
+            dict.splice(keep, dict.length - keep);
+            codeSize = minCodeSize + 1;
+            bufferOffset = 0;
         };
+
+        // Block allocators, double block size each time
+        var enlargeOutput = function() {
+            var outputSize = output.length + outputBlockSize;
+            var newoutput = new Uint8Array(outputSize);
+            newoutput.set(output);
+            output = newoutput;
+            outputBlockSize = outputBlockSize << 1;
+        }
+        var enlargeBuffer = function() {
+            var bufferSize = buffer.length + bufferBlockSize;
+            var newbuffer = new Uint8Array(bufferSize);
+            newbuffer.set(buffer);
+            buffer = newbuffer;
+            bufferBlockSize = bufferBlockSize << 1;
+        }
+
+        var pushCode = function(code, last) {
+            var newlength = dict[last].byteLength + 1;
+            while (bufferOffset + newlength > buffer.length) enlargeBuffer();
+            var newdict = buffer.subarray(bufferOffset, bufferOffset + newlength);
+            newdict.set(dict[last]);
+            newdict[newlength-1] = dict[code][0];
+            bufferOffset += newlength;
+            dict.push(newdict);
+        }
 
         var code;
         var last;
+
+        fill();
 
         while (true) {
             last = code;
@@ -177,14 +275,18 @@
 
             if (code < dict.length) {
                 if (last !== clearCode) {
-                    dict.push(dict[last].concat(dict[code][0]));
+                    pushCode(code, last);
                 }
             }
             else {
                 if (code !== dict.length) throw new Error('Invalid LZW code.');
-                dict.push(dict[last].concat(dict[last][0]));
+                pushCode(last, last);
             }
-            output.push.apply(output, dict[code]);
+
+            var newsize = dict[code].length;
+            while (outputOffset + newsize > output.length) enlargeOutput();
+            output.set(dict[code], outputOffset);
+            outputOffset += newsize;
 
             if (dict.length === (1 << codeSize) && codeSize < 12) {
                 // If we're at the last code and codeSize is 12, the next code will be a clearCode, and it'll be 12 bits long.
@@ -194,7 +296,7 @@
 
         // I don't know if this is technically an error, but some GIFs do it.
         //if (Math.ceil(pos / 8) !== data.length) throw new Error('Extraneous LZW bytes.');
-        return output;
+        return output.subarray(0, outputOffset);
     };
 
 
@@ -212,13 +314,25 @@
         };
 
         var readSubBlocks = function () {
-            var size, data;
-            data = '';
+            var size, data, offset = 0;
+            var bufsize = 8192;
+            data = new Uint8Array(bufsize);
+
+            var resizeBuffer = function() { 
+                var newdata = new Uint8Array(data.length + bufsize);
+                newdata.set(data);
+                data = newdata;
+            }
+
             do {
                 size = st.readByte();
-                data += st.read(size);
+
+                // Increase buffer size if this would exceed our current size
+                while (offset + size > data.length) resizeBuffer();
+                data.set(st.readBytes(size), offset);
+                offset += size;
             } while (size !== 0);
-            return data;
+            return data.subarray(0, offset); // truncate any excess buffer space
         };
 
         var parseHeader = function () {
@@ -434,6 +548,7 @@
         if (options.vp_w && options.vp_h) options.is_vp = true;
 
         var stream;
+        var picData;
         var hdr;
 
         var loadError = null;
@@ -483,7 +598,7 @@
                 parseGIF(stream, handler);
             }
             catch (err) {
-                doLoadError('parse');
+                doLoadError(picData,  'parse');
             }
         };
 
@@ -563,8 +678,9 @@
             }
         };
 
-        var doLoadError = function (originOfError) {
+        var doLoadError = function (picData, originOfError) {
             var drawError = function () {
+                /**
                 ctx.fillStyle = 'black';
                 ctx.fillRect(0, 0, options.c_w ? options.c_w : hdr.width, options.c_h ? options.c_h : hdr.height);
                 ctx.strokeStyle = 'red';
@@ -574,12 +690,32 @@
                 ctx.moveTo(0, options.c_h ? options.c_h : hdr.height);
                 ctx.lineTo(options.c_w ? options.c_w : hdr.width, 0);
                 ctx.stroke();
+                **/
+                
+                
+                myImage.crossOrigin = "Anonymous";
+                
+                
+                myImage.onload = function() {
+                      canvas.width =myImage.naturalWidth;
+                      canvas.height = myImage.naturalHeight;
+                      ctx.drawImage(myImage,0,0, myImage.naturalWidth, myImage.naturalHeight);
+                      console.log(myImage.naturalWidth, myImage.naturalHeight);
+                    
+                      var finalCanvas = cloneCanvas(canvas, myImage.naturalWidth, myImage.naturalHeight);
+                      document.getElementById("frames").append(finalCanvas);
+                    };
+                
+                //let fImage = parseIm(picData)
+                myImage.src = picData;
+                
+                //ctx.drawImage(myImage, gif.width,gif.height);
             };
 
             loadError = originOfError;
             hdr = {
-                width: gif.width,
-                height: gif.height
+                width: myImage.naturalWidth,
+                height: myImage.naturalHeight
             }; // Fake header.
             frames = [];
             drawError();
@@ -661,15 +797,18 @@
             var imgData = frame.getImageData(img.leftPos, img.topPos, img.width, img.height);
 
             //apply color table colors
-            img.pixels.forEach(function (pixel, i) {
+            for (var i = 0; i < img.pixels.length; i++) {
+                var pixel = img.pixels[i];
                 // imgData.data === [R,G,B,A,R,G,B,A,...]
                 if (pixel !== transparency) {
-                    imgData.data[i * 4 + 0] = ct[pixel][0];
-                    imgData.data[i * 4 + 1] = ct[pixel][1];
-                    imgData.data[i * 4 + 2] = ct[pixel][2];
-                    imgData.data[i * 4 + 3] = 255; // Opaque.
+                    var pix = ct[pixel];
+                    var idx = i * 4;
+                    imgData.data[idx    ] = pix[0];
+                    imgData.data[idx + 1] = pix[1];
+                    imgData.data[idx + 2] = pix[2];
+                    imgData.data[idx + 3] = 255; // Opaque.
                 }
-            });
+            }
 
             frame.putImageData(imgData, img.leftPos, img.topPos);
 
@@ -854,13 +993,23 @@
 
         var init = function () {
             var parent = gif.parentNode;
+            //var myImage = new Image();
 
             var div = document.createElement('div');
             canvas = document.createElement('canvas');
+            canvas.classList.add('frames');
+            canvas.setAttribute("id","gifCanvas");
+            
+            picCanvas = document.createElement('canvas');
+            picContext = canvas.getContext('2d');
+            
             ctx = canvas.getContext('2d');
             toolbar = document.createElement('div');
 
             tmpCanvas = document.createElement('canvas');
+            myImage = document.createElement('img')
+            myImage.style.display = "none";
+            canvas.style.height = "200px";
 
             div.width = canvas.width = gif.width;
             div.height = canvas.height = gif.height;
@@ -869,10 +1018,14 @@
             div.className = 'jsgif';
             toolbar.className = 'jsgif_toolbar';
             div.appendChild(canvas);
-            div.appendChild(toolbar);
+            //div.appendChild(toolbar);
+            var div2 = document.getElementById('frames');
+            div2.appendChild(myImage);
 
-            parent.insertBefore(div, gif);
-            parent.removeChild(gif);
+            if (parent) {
+                parent.insertBefore(div, gif);
+                parent.removeChild(gif);
+            }
 
             if (options.c_w && options.c_h) setSizes(options.c_w, options.c_h);
             initialized=true;
@@ -924,6 +1077,7 @@
             get_auto_play    : function() { return options.auto_play },
             get_length       : function() { return player.length() },
             get_current_frame: function() { return player.current_frame() },
+            get_frame        : function(i) { return frames[i]; },
             load_url: function(src,callback){
                 if (!load_setup(callback)) return;
 
@@ -958,11 +1112,13 @@
                         this.response = new VBArray(this.responseText).toArray().map(String.fromCharCode).join('');
                     }
                     var data = this.response;
-                    if (data.toString().indexOf("ArrayBuffer") > 0) {
+                    if (data instanceof ArrayBuffer) {
                         data = new Uint8Array(data);
                     }
 
                     stream = new Stream(data);
+                    picData = src;
+                   
                     setTimeout(doParse, 0);
                 };
                 h.onprogress = function (e) {
@@ -986,5 +1142,4 @@
 
     return SuperGif;
 }));
-
 
