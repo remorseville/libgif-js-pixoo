@@ -65,7 +65,7 @@
 
 const cloneCanvas = function(oldCanvas, width, height) {
 
-	
+
 	var newCanvas2 = document.createElement('canvas');
 	newCanvas2.classList.add("frame");
 
@@ -81,7 +81,7 @@ const cloneCanvas = function(oldCanvas, width, height) {
 	//newCanvas.height = xywh[3];
 	newCanvas2.width = 64;
 	newCanvas2.height = 64;
-	
+
 
 	//var imageDataShow = ctx2.getImageData(xywh[0], xywh[1], xywh[2], xywh[3]);
 	//context.putImageData(imageDataShow, 0,0 );
@@ -318,7 +318,7 @@ const crop = function(width, height) {
             var bufsize = 8192;
             data = new Uint8Array(bufsize);
 
-            var resizeBuffer = function() { 
+            var resizeBuffer = function() {
                 var newdata = new Uint8Array(data.length + bufsize);
                 newdata.set(data);
                 data = newdata;
@@ -681,35 +681,21 @@ const crop = function(width, height) {
         var doLoadError = function (picData, originOfError) {
             var drawError = function () {
                 /**
-                ctx.fillStyle = 'black';
-                ctx.fillRect(0, 0, options.c_w ? options.c_w : hdr.width, options.c_h ? options.c_h : hdr.height);
-                ctx.strokeStyle = 'red';
-                ctx.lineWidth = 3;
-                ctx.moveTo(0, 0);
-                ctx.lineTo(options.c_w ? options.c_w : hdr.width, options.c_h ? options.c_h : hdr.height);
-                ctx.moveTo(0, options.c_h ? options.c_h : hdr.height);
-                ctx.lineTo(options.c_w ? options.c_w : hdr.width, 0);
-                ctx.stroke();
+                CUSTOM ERROR HANDLING AS IMAGE
                 **/
-                
-                
+
                 myImage.crossOrigin = "Anonymous";
-                
-                
+
                 myImage.onload = function() {
                       canvas.width =myImage.naturalWidth;
                       canvas.height = myImage.naturalHeight;
                       ctx.drawImage(myImage,0,0, myImage.naturalWidth, myImage.naturalHeight);
-                      console.log(myImage.naturalWidth, myImage.naturalHeight);
-                    
                       var finalCanvas = cloneCanvas(canvas, myImage.naturalWidth, myImage.naturalHeight);
                       document.getElementById("frames").append(finalCanvas);
                     };
-                
-                //let fImage = parseIm(picData)
+
                 myImage.src = picData;
-                
-                //ctx.drawImage(myImage, gif.width,gif.height);
+
             };
 
             loadError = originOfError;
@@ -999,10 +985,10 @@ const crop = function(width, height) {
             canvas = document.createElement('canvas');
             canvas.classList.add('frames');
             canvas.setAttribute("id","gifCanvas");
-            
+
             picCanvas = document.createElement('canvas');
             picContext = canvas.getContext('2d');
-            
+
             ctx = canvas.getContext('2d');
             toolbar = document.createElement('div');
 
@@ -1018,7 +1004,6 @@ const crop = function(width, height) {
             div.className = 'jsgif';
             toolbar.className = 'jsgif_toolbar';
             div.appendChild(canvas);
-            //div.appendChild(toolbar);
             var div2 = document.getElementById('frames');
             div2.appendChild(myImage);
 
@@ -1118,7 +1103,7 @@ const crop = function(width, height) {
 
                     stream = new Stream(data);
                     picData = src;
-                   
+
                     setTimeout(doParse, 0);
                 };
                 h.onprogress = function (e) {
@@ -1142,4 +1127,3 @@ const crop = function(width, height) {
 
     return SuperGif;
 }));
-
